@@ -1,0 +1,3 @@
+[submodule "fontstash-sys/fontstash"]
+	path = fontstash-sys/fontstash
+	url = https://github.com/memononen/fontstash

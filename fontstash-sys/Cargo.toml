@@ -1,0 +1,15 @@
+[package]
+name = "fontstash-sys"
+version = "0.1.0"
+authors = ["toyboot4e <toyboot4e@gmail.com>"]
+edition = "2018"
+
+links = "fontstash"
+
+[lib]
+name = "fontstash_sys"
+path = "lib.rs"
+
+[build-dependencies]
+bindgen = "0.55.1"
+cc = "1.0.60"
