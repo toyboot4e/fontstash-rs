@@ -4,5 +4,8 @@ version = "0.1.0"
 authors = ["toyboot4e <toyboot4e@gmail.com>"]
 edition = "2018"
 
+[lib]
+name = "fontstash"
+
 [dependencies]
 fontstash-sys = { path = "./fontstash-sys" }
