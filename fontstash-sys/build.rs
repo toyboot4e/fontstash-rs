@@ -4,7 +4,7 @@
 //!
 //! # What it does
 //!
-//! 1. Pulls `fontstash` recursively if there's not
+//! 1. Pulls `fontstash` if there's not
 //! 2. Compiles `fontstash` if it's not found in `OUT_DIR`
 //! 4. Links to the output libraries
 //! 5. Makes bindings (FFI) to the C libraries
@@ -29,11 +29,11 @@ fn main() {
 fn prepare() {
     let root = PathBuf::from(env::var("CARGO_MANIFEST_DIR").unwrap());
 
-    // Command::new("git")
-    //     .current_dir(&root)
-    //     .args(&["submodule", "update", "--init", "--recursive"])
-    //     .status()
-    //     .expect("is git in your PATH?");
+    Command::new("git")
+        .current_dir(&root)
+        .args(&["submodule", "update", "--init", "--recursive"])
+        .status()
+        .expect("is git in your PATH?");
 }
 
 /// Runs `cc` (only when it's necessary) and links the output libraries
