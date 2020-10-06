@@ -4,18 +4,13 @@
 //!
 //! # Custom renderer
 //!
-//! `fontstash-rs` doesn't include the edfault renderer in the original repository.
+//! `fontstash-rs` doesn't include the default renderer in the original repository. You have to
+//! write your own.
 //!
-//! There are two ways to draw texts:
+//! You pull [`FONSquad`](crate::sys::FONSquad]s via [`FonsTextIter`] and batch them to make draw
+//! calls.
 //!
-//! ## Iterator ([`FonsTextIter`])
-//!
-//! You would batch quads manually.
-//!
-//! ## Callback
-//!
-//! The rendering callback method of [`Renderer`] is.. not so good. They're not provided as arrays
-//! of vertex components. Prefer the iterator.
+//! The callback-based renderer is excluded from this crate.
 //!
 //! # References
 //!
@@ -37,6 +32,9 @@ pub unsafe trait Renderer {
         width: std::os::raw::c_int,
         height: std::os::raw::c_int,
     ) -> std::os::raw::c_int;
+
+    /// Free user texture data here
+    unsafe extern "C" fn delete(uptr: *mut std::os::raw::c_void);
 
     /// Recreation can be sufficient
     ///
@@ -66,9 +64,6 @@ pub unsafe trait Renderer {
         nverts: std::os::raw::c_int,
     ) {
     }
-
-    /// Free user texture data here
-    unsafe extern "C" fn delete(uptr: *mut std::os::raw::c_void);
 }
 
 // --------------------------------------------------------------------------------

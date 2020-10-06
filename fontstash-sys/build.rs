@@ -38,16 +38,13 @@ fn prepare() {
 
 /// Runs `cc` (only when it's necessary) and links the output libraries
 fn compile() {
+    let root = PathBuf::from(env::var("CARGO_MANIFEST_DIR").unwrap());
     let out_dir = PathBuf::from(env::var("OUT_DIR").unwrap());
 
-    println!("cargo:rustc-link-lib=fontstash");
-    println!("cargo:rerun-if-changed=fontstash_wrapper.h");
-
-    let out_file_path = out_dir.join("libfontstash.a");
-    if !out_file_path.is_file() {
-        cc::Build::new()
-            .file("fontstash_wrapper.h")
-            .compile("libfontstash.a");
+    let out_lib_path = out_dir.join("libfontstash.a");
+    if !out_lib_path.is_file() {
+        let file = root.join("fontstash_wrapper.h");
+        cc::Build::new().file(file).compile("libfontstash.a");
     }
 
     println!("cargo:rustc-link-search=native={}", out_dir.display());
