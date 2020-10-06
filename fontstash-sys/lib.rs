@@ -2,7 +2,7 @@
 //!
 //! [fontstash]: https://github.com/memononen/fontstash
 
-// Supress casing errors
+// Supress all errors
 #![allow(non_upper_case_globals)]
 #![allow(non_camel_case_types)]
 #![allow(non_snake_case)]

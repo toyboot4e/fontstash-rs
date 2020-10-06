@@ -43,7 +43,7 @@ fn compile() {
 
     let out_lib_path = out_dir.join("libfontstash.a");
     if !out_lib_path.is_file() {
-        let file = root.join("fontstash_wrapper.h");
+        let file = root.join("fontstash.c");
         cc::Build::new().file(file).compile("libfontstash.a");
     }
 
