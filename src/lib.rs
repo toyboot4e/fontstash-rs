@@ -21,6 +21,8 @@
 //!
 //! * https://github.com/prime31/via/blob/master/fonts/fontbook.v
 
+#![allow(unused_variables)]
+
 pub use fontstash_sys as sys;
 
 /// Set of callbacks
@@ -193,6 +195,11 @@ impl FonsContext {
 
     pub fn text_iter(&self, text: &str) -> FonsTextIter {
         FonsTextIter::new(self, text)
+    }
+
+    pub unsafe fn with_pixels(&self, w: u32, h: u32, mut f: impl FnMut(&[u8])) {
+        let pixels = std::slice::from_raw_parts((*self.raw()).texData, (w * h) as usize);
+        f(pixels);
     }
 }
 
