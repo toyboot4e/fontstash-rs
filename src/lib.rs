@@ -84,6 +84,10 @@ impl std::ops::Deref for FonsContextDrop {
 }
 
 impl FonsContextDrop {
+    pub fn raw(&self) -> *mut sys::FONScontext {
+        self.fons.raw
+    }
+
     pub fn create<R: Renderer>(w: u32, h: u32, renderer: *mut R) -> Self {
         Self {
             fons: FonsContext::create(w, h, renderer),
@@ -116,15 +120,25 @@ impl Drop for FonsContextDrop {
 // `FonsContext`, smarter pointer of [`FONScontext`]
 
 /// Smarter pointer of [`sys::FONScontext`] with methods
+///
+/// Although this is some comfortable layer, it would be hidden by your own font fook
+/// implementation..
 #[derive(Debug, Clone, Copy)]
 pub struct FonsContext {
-    pub raw: *mut sys::FONScontext,
+    raw: *mut sys::FONScontext,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct FontIx(u32);
+
 impl FonsContext {
+    pub fn raw(&self) -> *mut sys::FONScontext {
+        self.raw
+    }
+
     /// Creates `FONScontext`
     ///
-    /// The `renderer` has to have consistant immory position. Maybe put in in a `Box`.
+    /// The `renderer` has to have consistant memory position. Maybe put in in a `Box`.
     pub fn create<R: Renderer>(w: u32, h: u32, renderer: *mut R) -> Self {
         let params = sys::FONSparams {
             width: w as std::os::raw::c_int,
@@ -143,16 +157,25 @@ impl FonsContext {
         }
     }
 
-    pub fn add_font_mem(&self, name: &str, data: &[u8]) {
+    pub fn add_font_mem(&self, name: &str, data: &[u8]) -> FontIx {
         let name = std::ffi::CString::new(name).unwrap();
-        unsafe {
+
+        let ix = unsafe {
             sys::fonsAddFontMem(
                 self.raw,
                 name.as_ptr() as *const _,
                 data as *const _ as *mut _,
                 data.len() as i32,
                 false as i32,
-            );
+            )
+        };
+
+        FontIx(ix as u32)
+    }
+
+    pub fn set_font(&self, font: FontIx) {
+        unsafe {
+            sys::fonsSetFont(self.raw, font.0 as i32);
         }
     }
 
@@ -284,10 +307,6 @@ pub enum Flags {
 
 // extern "C" {
 //     pub fn fonsSetAlign(s: *mut FONScontext, align: ::std::os::raw::c_int);
-// }
-
-// extern "C" {
-//     pub fn fonsSetFont(s: *mut FONScontext, font: ::std::os::raw::c_int);
 // }
 
 // extern "C" {

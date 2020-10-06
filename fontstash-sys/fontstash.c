@@ -4,7 +4,10 @@
 #include <stdlib.h>
 #include <stdio.h>
 
-// Define it in `build.rs` when actually building:
-// #define FONTSTASH_IMPLEMENTATION
+// Include implementation even in FFI
+#define FONTSTASH_IMPLEMENTATION
+
+// We don't use callbacks for drawing (we'll use iterator)
+#define FONS_VERTEX_COUNT 0
 
 #include "fontstash/src/fontstash.h"
