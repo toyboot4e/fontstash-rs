@@ -20,6 +20,24 @@
 
 pub use fontstash_sys as sys;
 
+pub type Result<T> = std::result::Result<T, FonsError>;
+
+#[derive(Debug, Clone)]
+pub enum FonsError {
+    FailedToAllocFont(),
+    /// `renderResize` was None or failed (did not return `1`)
+    RenderResizeError(),
+}
+
+// #[derive(Debug, Clone, Copy)]
+// #[repr(u8)]
+// pub enum ErrorCode {
+//     AtlasFull = sys::FONSerrorCode_FONS_ATLAS_FULL as u8,
+//     ScratchFull = sys::FONSerrorCode_FONS_SCRATCH_FULL as u8,
+//     StatesOverflow = sys::FONSerrorCode_FONS_STATES_OVERFLOW as u8,
+//     StatesUnderflow = sys::FONSerrorCode_FONS_STATES_UNDERFLOW as u8,
+// }
+
 pub type ErrorCallback = unsafe extern "C" fn(
     uptr: *mut ::std::os::raw::c_void,
     error: ::std::os::raw::c_int,
@@ -106,15 +124,6 @@ impl FonsContextDrop {
             fons: FonsContext::create(w, h, renderer),
         }
     }
-
-    /// Hack to create [`FonsContextDrop`] (set it with [`create`] soon)
-    pub fn null() -> Self {
-        Self {
-            fons: FonsContext {
-                raw: std::ptr::null_mut(),
-            },
-        }
-    }
 }
 
 pub fn delete(cx: *mut sys::FONScontext) {
@@ -171,7 +180,7 @@ impl FonsContext {
         }
     }
 
-    pub fn add_font_mem(&self, name: &str, data: &[u8]) -> FontIx {
+    pub fn add_font_mem(&self, name: &str, data: &[u8]) -> Result<FontIx> {
         let name = std::ffi::CString::new(name).unwrap();
 
         let ix = unsafe {
@@ -184,7 +193,11 @@ impl FonsContext {
             )
         };
 
-        FontIx(ix as u32)
+        if ix == sys::FONS_INVALID {
+            Err(FonsError::FailedToAllocFont())
+        } else {
+            Ok(FontIx(ix as u32))
+        }
     }
 
     pub fn set_font(&self, font: FontIx) {
@@ -193,9 +206,15 @@ impl FonsContext {
         }
     }
 
-    // return result
-    pub fn reset_atlas(&self, w: u32, h: u32) -> bool {
-        unsafe { sys::fonsResetAtlas(self.raw(), w as i32, h as i32) == 1 }
+    /// Returns true if succeeded
+    pub fn reset_atlas(&self, w: u32, h: u32) -> Result<()> {
+        unsafe {
+            if sys::fonsResetAtlas(self.raw(), w as i32, h as i32) == 1 {
+                Ok(())
+            } else {
+                Err(FonsError::RenderResizeError())
+            }
+        }
     }
 
     pub fn set_size(&self, size: f32) {
@@ -215,11 +234,11 @@ impl FonsContext {
     }
 
     /// Note that each pixel in one byte (1 channel)
-    pub unsafe fn with_pixels(&self, mut f: impl FnMut(&[u8], u32, u32)) {
+    pub fn with_pixels(&self, mut f: impl FnMut(&[u8], u32, u32)) {
         let (mut w, mut h) = (0, 0);
-        let ptr = sys::fonsGetTextureData(self.raw(), &mut w, &mut h);
+        let ptr = unsafe { sys::fonsGetTextureData(self.raw(), &mut w, &mut h) };
         if !ptr.is_null() {
-            let pixels = std::slice::from_raw_parts(ptr, (w * h) as usize);
+            let pixels = unsafe { std::slice::from_raw_parts(ptr, (w * h) as usize) };
             f(pixels, w as u32, h as u32);
         } else {
             eprintln!("fontstash-rs: fonsGetTextureData returned null");
@@ -237,15 +256,6 @@ pub enum Align {
     Mid = sys::FONSalign_FONS_ALIGN_MIDDLE as u8,
     Right = sys::FONSalign_FONS_ALIGN_RIGHT as u8,
     Top = sys::FONSalign_FONS_ALIGN_TOP as u8,
-}
-
-#[derive(Debug, Clone, Copy)]
-#[repr(u8)]
-pub enum ErrorCode {
-    AtlasFull = sys::FONSerrorCode_FONS_ATLAS_FULL as u8,
-    ScratchFull = sys::FONSerrorCode_FONS_SCRATCH_FULL as u8,
-    StatesOverflow = sys::FONSerrorCode_FONS_STATES_OVERFLOW as u8,
-    StatesUnderflow = sys::FONSerrorCode_FONS_STATES_UNDERFLOW as u8,
 }
 
 #[derive(Debug, Clone, Copy)]
