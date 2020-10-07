@@ -20,11 +20,27 @@
 
 pub use fontstash_sys as sys;
 
+pub type ErrorCallback = unsafe extern "C" fn(
+    uptr: *mut ::std::os::raw::c_void,
+    error: ::std::os::raw::c_int,
+    val: ::std::os::raw::c_int,
+);
+
+pub fn set_error_callback(
+    cx: *mut sys::FONScontext,
+    callback: ErrorCallback,
+    uptr: *mut ::std::os::raw::c_void,
+) {
+    unsafe {
+        sys::fonsSetErrorCallback(cx, Some(callback), uptr);
+    }
+}
+
 /// Set of callbacks
 ///
 /// * `uptr`: user pointer that can be casted to the implementation of `Renderer`
 pub unsafe trait Renderer {
-    /// Initialize resource here
+    /// Initialize resource and [`set_error_callback`] here
     ///
     /// Return `1` to represent success.
     unsafe extern "C" fn create(
@@ -137,10 +153,11 @@ impl FonsContext {
     ///
     /// The `renderer` has to have consistant memory position. Maybe put in in a `Box`.
     pub fn create<R: Renderer>(w: u32, h: u32, renderer: *mut R) -> Self {
+        let flags = Flags::TopLeft;
         let params = sys::FONSparams {
             width: w as std::os::raw::c_int,
             height: h as std::os::raw::c_int,
-            flags: Flags::TopLeft as u8,
+            flags: flags as u8,
             userPtr: renderer as *mut _,
             renderCreate: Some(R::create),
             renderResize: Some(R::resize),
@@ -176,6 +193,11 @@ impl FonsContext {
         }
     }
 
+    // return result
+    pub fn reset_atlas(&self, w: u32, h: u32) -> bool {
+        unsafe { sys::fonsResetAtlas(self.raw(), w as i32, h as i32) == 1 }
+    }
+
     pub fn set_size(&self, size: f32) {
         unsafe {
             sys::fonsSetSize(self.raw, size);
@@ -192,9 +214,16 @@ impl FonsContext {
         FonsTextIter::new(self, text)
     }
 
-    pub unsafe fn with_pixels(&self, w: u32, h: u32, mut f: impl FnMut(&[u8])) {
-        let pixels = std::slice::from_raw_parts((*self.raw()).texData, (w * h) as usize);
-        f(pixels);
+    /// Note that each pixel in one byte (1 channel)
+    pub unsafe fn with_pixels(&self, mut f: impl FnMut(&[u8], u32, u32)) {
+        let (mut w, mut h) = (0, 0);
+        let ptr = sys::fonsGetTextureData(self.raw(), &mut w, &mut h);
+        if !ptr.is_null() {
+            let pixels = std::slice::from_raw_parts(ptr, (w * h) as usize);
+            f(pixels, w as u32, h as u32);
+        } else {
+            eprintln!("fontstash-rs: fonsGetTextureData returned null");
+        }
     }
 }
 
@@ -227,20 +256,6 @@ pub enum Flags {
 }
 
 // extern "C" {
-//     pub fn fonsSetErrorCallback(
-//         s: *mut FONScontext,
-//         callback: ::std::option::Option<
-//             unsafe extern "C" fn(
-//                 uptr: *mut ::std::os::raw::c_void,
-//                 error: ::std::os::raw::c_int,
-//                 val: ::std::os::raw::c_int,
-//             ),
-//         >,
-//         uptr: *mut ::std::os::raw::c_void,
-//     );
-// }
-
-// extern "C" {
 //     pub fn fonsGetAtlasSize(
 //         s: *mut FONScontext,
 //         width: *mut ::std::os::raw::c_int,
@@ -251,14 +266,6 @@ pub enum Flags {
 // extern "C" {
 //     pub fn fonsExpandAtlas(
 //         s: *mut FONScontext,
-//         width: ::std::os::raw::c_int,
-//         height: ::std::os::raw::c_int,
-//     ) -> ::std::os::raw::c_int;
-// }
-
-// extern "C" {
-//     pub fn fonsResetAtlas(
-//         stash: *mut FONScontext,
 //         width: ::std::os::raw::c_int,
 //         height: ::std::os::raw::c_int,
 //     ) -> ::std::os::raw::c_int;
@@ -388,12 +395,11 @@ impl FonsTextIter {
                 iter,
                 quad,
                 is_running: res == 1,
-                // _marker: std::marker::PhantomData,
             }
         }
     }
 
-    pub fn next(&mut self) -> Option<&mut sys::FONSquad> {
+    pub fn next(&mut self) -> Option<&sys::FONSquad> {
         if !self.is_running {
             return None;
         }
@@ -407,7 +413,7 @@ impl FonsTextIter {
         };
 
         if res == 1 {
-            Some(&mut self.quad)
+            Some(&self.quad)
         } else {
             None
         }

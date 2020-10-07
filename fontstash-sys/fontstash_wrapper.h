@@ -3,6 +3,6 @@
 #include <stdlib.h>
 #include <stdio.h>
 
-// We include
-#define FONTSTASH_IMPLEMENTATION
+// #define FONTSTASH_IMPLEMENTATION
+
 #include "fontstash/src/fontstash.h"

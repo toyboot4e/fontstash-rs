@@ -7,5 +7,6 @@
 #![allow(non_camel_case_types)]
 #![allow(non_snake_case)]
 #![allow(improper_ctypes)]
+#![allow(unused_imports)]
 
 include!(concat!(env!("OUT_DIR"), "/fontstash_bindings.rs"));
