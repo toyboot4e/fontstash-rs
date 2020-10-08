@@ -18,9 +18,9 @@
 
 #![allow(unused_variables)]
 
-pub use fontstash_sys as sys;
+pub use ::fontstash_sys as sys;
 
-pub type Result<T> = std::result::Result<T, FonsError>;
+pub type Result<T> = ::std::result::Result<T, FonsError>;
 
 #[derive(Debug, Clone)]
 pub enum FonsError {
