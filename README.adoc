@@ -1,3 +1,3 @@
 = fontstash-rs
 
-Wrapper of https://github.com/memononen/fontstash[fontstash] for use with iterator (not for callbacks)
+Wrapper of https://github.com/memononen/fontstash[fontstash] for use with iterator (not with callbacks)
