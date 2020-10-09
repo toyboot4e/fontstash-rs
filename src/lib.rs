@@ -25,19 +25,33 @@ pub type Result<T> = ::std::result::Result<T, FonsError>;
 #[derive(Debug, Clone)]
 pub enum FonsError {
     FailedToAllocFont(),
-    /// `renderResize` was None or failed (did not return `1`)
+    /// `renderResize` returned `1`
     RenderResizeError(),
 }
 
-// #[derive(Debug, Clone, Copy)]
-// #[repr(u8)]
-// pub enum ErrorCode {
-//     AtlasFull = sys::FONSerrorCode_FONS_ATLAS_FULL as u8,
-//     ScratchFull = sys::FONSerrorCode_FONS_SCRATCH_FULL as u8,
-//     StatesOverflow = sys::FONSerrorCode_FONS_STATES_OVERFLOW as u8,
-//     StatesUnderflow = sys::FONSerrorCode_FONS_STATES_UNDERFLOW as u8,
-// }
+/// Error code supplied to [`ErrorCallBack`]
+#[derive(Debug, Clone, Copy)]
+#[repr(u8)]
+pub enum ErrorCode {
+    AtlasFull = sys::FONSerrorCode_FONS_ATLAS_FULL as u8,
+    ScratchFull = sys::FONSerrorCode_FONS_SCRATCH_FULL as u8,
+    StatesOverflow = sys::FONSerrorCode_FONS_STATES_OVERFLOW as u8,
+    StatesUnderflow = sys::FONSerrorCode_FONS_STATES_UNDERFLOW as u8,
+}
 
+impl ErrorCode {
+    pub fn from_u32(x: u32) -> Option<Self> {
+        Some(match x {
+            sys::FONSerrorCode_FONS_ATLAS_FULL => ErrorCode::AtlasFull,
+            sys::FONSerrorCode_FONS_SCRATCH_FULL => ErrorCode::ScratchFull,
+            sys::FONSerrorCode_FONS_STATES_OVERFLOW => ErrorCode::StatesOverflow,
+            sys::FONSerrorCode_FONS_STATES_UNDERFLOW => ErrorCode::StatesUnderflow,
+            _ => return None,
+        })
+    }
+}
+
+/// The [`error`] is actually [`ErrorCode`]
 pub type ErrorCallback = unsafe extern "C" fn(
     uptr: *mut ::std::os::raw::c_void,
     error: ::std::os::raw::c_int,
@@ -70,9 +84,9 @@ pub unsafe trait Renderer {
     /// Free user texture data here
     unsafe extern "C" fn delete(uptr: *mut std::os::raw::c_void);
 
-    /// Recreation can be sufficient
+    /// Create new texture
     ///
-    /// Return `1` to represent success.
+    /// Return `1` to represent success; it's actually boolean.
     unsafe extern "C" fn resize(
         uptr: *mut std::os::raw::c_void,
         width: std::os::raw::c_int,
@@ -96,64 +110,62 @@ pub unsafe trait Renderer {
         tcoords: *const f32,
         colors: *const std::os::raw::c_uint,
         nverts: std::os::raw::c_int,
-    ) {
-    }
+    );
 }
 
-// --------------------------------------------------------------------------------
-// Owned version of `FonsContext`
-
-pub struct FonsContextDrop {
-    pub fons: FonsContext,
+/// Reference counted version of [`FonsContextDrop`]
+pub struct FonsContext {
+    fons: std::rc::Rc<FonsContextDrop>,
 }
 
-impl std::ops::Deref for FonsContextDrop {
-    type Target = FonsContext;
+impl std::ops::Deref for FonsContext {
+    type Target = FonsContextDrop;
     fn deref(&self) -> &Self::Target {
-        &self.fons
+        self.fons.as_ref()
     }
 }
 
-impl FonsContextDrop {
+impl FonsContext {
     pub fn raw(&self) -> *mut sys::FONScontext {
-        self.fons.raw
+        self.fons.as_ref() as *const _ as *mut _
     }
 
     pub fn create<R: Renderer>(w: u32, h: u32, renderer: *mut R) -> Self {
+        FonsContext {
+            fons: std::rc::Rc::new(FonsContextDrop::create(w, h, renderer)),
+        }
+    }
+
+    pub fn placeholder_null() -> Self {
         Self {
-            fons: FonsContext::create(w, h, renderer),
+            fons: std::rc::Rc::new(FonsContextDrop {
+                raw: std::ptr::null_mut(),
+            }),
+        }
+    }
+
+    pub fn clone(&self) -> Self {
+        FonsContext {
+            fons: self.fons.clone(),
         }
     }
 }
 
-pub fn delete(cx: *mut sys::FONScontext) {
-    unsafe {
-        sys::fonsDeleteInternal(cx);
-    }
+/// Wrapped version of [`sys::FONScontext`] with methods
+#[derive(Debug)]
+pub struct FonsContextDrop {
+    raw: *mut sys::FONScontext,
 }
 
 impl Drop for FonsContextDrop {
     fn drop(&mut self) {
-        self::delete(self.fons.raw);
+        unsafe {
+            sys::fonsDeleteInternal(self.raw);
+        }
     }
 }
 
-// --------------------------------------------------------------------------------
-// `FonsContext`, smarter pointer of [`FONScontext`]
-
-/// Smarter pointer of [`sys::FONScontext`] with methods
-///
-/// Although this is some comfortable layer, it would be hidden by your own font fook
-/// implementation..
-#[derive(Debug, Clone, Copy)]
-pub struct FonsContext {
-    raw: *mut sys::FONScontext,
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct FontIx(u32);
-
-impl FonsContext {
+impl FonsContextDrop {
     pub fn raw(&self) -> *mut sys::FONScontext {
         self.raw
     }
@@ -175,11 +187,17 @@ impl FonsContext {
             renderDelete: Some(R::delete),
         };
 
-        Self {
+        FonsContextDrop {
             raw: unsafe { sys::fonsCreateInternal(&params as *const _ as *mut _) },
         }
     }
+}
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct FontIx(u32);
+
+/// Font storage
+impl FonsContextDrop {
     pub fn add_font_mem(&self, name: &str, data: &[u8]) -> Result<FontIx> {
         let name = std::ffi::CString::new(name).unwrap();
 
@@ -200,10 +218,47 @@ impl FonsContext {
         }
     }
 
+    // extern "C" {
+    //     pub fn fonsAddFont(
+    //         s: *mut FONScontext,
+    //         name: *const ::std::os::raw::c_char,
+    //         path: *const ::std::os::raw::c_char,
+    //     ) -> ::std::os::raw::c_int;
+    // }
+
+    // extern "C" {
+    //     pub fn fonsAddFallbackFont(
+    //         stash: *mut FONScontext,
+    //         base: ::std::os::raw::c_int,
+    //         fallback: ::std::os::raw::c_int,
+    //     ) -> ::std::os::raw::c_int;
+    // }
+
     pub fn set_font(&self, font: FontIx) {
         unsafe {
             sys::fonsSetFont(self.raw, font.0 as i32);
         }
+    }
+
+    pub fn font_ix_by_name(&self, name: &str) -> Option<FontIx> {
+        let name = std::ffi::CString::new(name).ok()?;
+        let ix = unsafe { sys::fonsGetFontByName(self.raw(), name.as_ptr()) };
+        if ix == sys::FONS_INVALID {
+            None
+        } else {
+            Some(FontIx(ix as u32))
+        }
+    }
+}
+
+/// Atlas
+impl FonsContextDrop {
+    pub fn atlas_size(&self) -> [u32; 2] {
+        let [mut x, mut y] = [0, 0];
+        unsafe {
+            sys::fonsGetAtlasSize(self.raw(), &mut x, &mut y);
+        }
+        [x as u32, y as u32]
     }
 
     /// Returns true if succeeded
@@ -217,6 +272,18 @@ impl FonsContext {
         }
     }
 
+    /// Returns true if succeed
+    pub fn expand_atlas(&self, w: u32, h: u32) -> Result<()> {
+        if unsafe { sys::fonsExpandAtlas(self.raw(), w as i32, h as i32) } == 1 {
+            Ok(())
+        } else {
+            Err(FonsError::RenderResizeError())
+        }
+    }
+}
+
+/// Font style state
+impl FonsContextDrop {
     pub fn set_size(&self, size: f32) {
         unsafe {
             sys::fonsSetSize(self.raw, size);
@@ -229,11 +296,22 @@ impl FonsContext {
         }
     }
 
-    pub fn text_iter(&self, text: &str) -> FonsTextIter {
-        FonsTextIter::new(self, text)
-    }
+    // extern "C" {
+    //     pub fn fonsSetSpacing(s: *mut FONScontext, spacing: f32);
+    // }
 
-    /// Note that each pixel in one byte (1 channel)
+    // extern "C" {
+    //     pub fn fonsSetBlur(s: *mut FONScontext, blur: f32);
+    // }
+
+    // extern "C" {
+    //     pub fn fonsSetAlign(s: *mut FONScontext, align: ::std::os::raw::c_int);
+    // }
+}
+
+/// Texture
+impl FonsContextDrop {
+    /// Note that each pixel is in one byte (8 bits alpha channel only)
     pub fn with_pixels(&self, mut f: impl FnMut(&[u8], u32, u32)) {
         let (mut w, mut h) = (0, 0);
         let ptr = unsafe { sys::fonsGetTextureData(self.raw(), &mut w, &mut h) };
@@ -244,6 +322,78 @@ impl FonsContext {
             eprintln!("fontstash-rs: fonsGetTextureData returned null");
         }
     }
+
+    /// FIXME: this
+    pub fn is_dirty(&self) -> (bool, i32) {
+        let mut dirty_flags = 0;
+        let x = unsafe { sys::fonsValidateTexture(self.raw(), &mut dirty_flags) };
+        (x == 1, dirty_flags)
+    }
+}
+
+/// Draw
+impl FonsContext {
+    /// Iterator-based rendering
+    pub fn text_iter(&self, text: &str) -> FonsTextIter {
+        FonsTextIter::new(self.clone(), text)
+    }
+
+    // Callback-based rendering
+    // extern "C" {
+    //     pub fn fonsDrawText(
+    //         s: *mut FONScontext,
+    //         x: f32,
+    //         y: f32,
+    //         string: *const ::std::os::raw::c_char,
+    //         end: *const ::std::os::raw::c_char,
+    //     ) -> f32;
+    // }
+
+    // extern "C" {
+    //     pub fn fonsDrawDebug(s: *mut FONScontext, x: f32, y: f32);
+    // }
+}
+
+/// State stack
+impl FonsContext {
+    // extern "C" {
+    //     pub fn fonsPushState(s: *mut FONScontext);
+    // }
+
+    // extern "C" {
+    //     pub fn fonsPopState(s: *mut FONScontext);
+    // }
+
+    // extern "C" {
+    //     pub fn fonsClearState(s: *mut FONScontext);
+    // }
+}
+
+/// Measure
+impl FonsContext {
+    // extern "C" {
+    //     pub fn fonsTextBounds(
+    //         s: *mut FONScontext,
+    //         x: f32,
+    //         y: f32,
+    //         string: *const ::std::os::raw::c_char,
+    //         end: *const ::std::os::raw::c_char,
+    //         bounds: *mut f32,
+    //     ) -> f32;
+    // }
+
+    // extern "C" {
+    //     pub fn fonsLineBounds(s: *mut FONScontext, y: f32, miny: *mut f32, maxy: *mut f32);
+    // }
+
+    // extern "C" {
+    //     pub fn fonsVertMetrics(
+    //         s: *mut FONScontext,
+    //         ascender: *mut f32,
+    //         descender: *mut f32,
+    //         lineh: *mut f32,
+    //     );
+    // }
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -265,122 +415,6 @@ pub enum Flags {
     TopLeft = sys::FONSflags_FONS_ZERO_TOPLEFT as u8,
 }
 
-// extern "C" {
-//     pub fn fonsGetAtlasSize(
-//         s: *mut FONScontext,
-//         width: *mut ::std::os::raw::c_int,
-//         height: *mut ::std::os::raw::c_int,
-//     );
-// }
-
-// extern "C" {
-//     pub fn fonsExpandAtlas(
-//         s: *mut FONScontext,
-//         width: ::std::os::raw::c_int,
-//         height: ::std::os::raw::c_int,
-//     ) -> ::std::os::raw::c_int;
-// }
-
-// extern "C" {
-//     pub fn fonsAddFont(
-//         s: *mut FONScontext,
-//         name: *const ::std::os::raw::c_char,
-//         path: *const ::std::os::raw::c_char,
-//     ) -> ::std::os::raw::c_int;
-// }
-
-// extern "C" {
-//     pub fn fonsGetFontByName(
-//         s: *mut FONScontext,
-//         name: *const ::std::os::raw::c_char,
-//     ) -> ::std::os::raw::c_int;
-// }
-
-// extern "C" {
-//     pub fn fonsAddFallbackFont(
-//         stash: *mut FONScontext,
-//         base: ::std::os::raw::c_int,
-//         fallback: ::std::os::raw::c_int,
-//     ) -> ::std::os::raw::c_int;
-// }
-
-// extern "C" {
-//     pub fn fonsPushState(s: *mut FONScontext);
-// }
-
-// extern "C" {
-//     pub fn fonsPopState(s: *mut FONScontext);
-// }
-
-// extern "C" {
-//     pub fn fonsClearState(s: *mut FONScontext);
-// }
-
-// extern "C" {
-//     pub fn fonsSetSpacing(s: *mut FONScontext, spacing: f32);
-// }
-
-// extern "C" {
-//     pub fn fonsSetBlur(s: *mut FONScontext, blur: f32);
-// }
-
-// extern "C" {
-//     pub fn fonsSetAlign(s: *mut FONScontext, align: ::std::os::raw::c_int);
-// }
-
-// extern "C" {
-//     pub fn fonsDrawText(
-//         s: *mut FONScontext,
-//         x: f32,
-//         y: f32,
-//         string: *const ::std::os::raw::c_char,
-//         end: *const ::std::os::raw::c_char,
-//     ) -> f32;
-// }
-
-// extern "C" {
-//     pub fn fonsTextBounds(
-//         s: *mut FONScontext,
-//         x: f32,
-//         y: f32,
-//         string: *const ::std::os::raw::c_char,
-//         end: *const ::std::os::raw::c_char,
-//         bounds: *mut f32,
-//     ) -> f32;
-// }
-
-// extern "C" {
-//     pub fn fonsLineBounds(s: *mut FONScontext, y: f32, miny: *mut f32, maxy: *mut f32);
-// }
-
-// extern "C" {
-//     pub fn fonsVertMetrics(
-//         s: *mut FONScontext,
-//         ascender: *mut f32,
-//         descender: *mut f32,
-//         lineh: *mut f32,
-//     );
-// }
-
-// extern "C" {
-//     pub fn fonsGetTextureData(
-//         stash: *mut FONScontext,
-//         width: *mut ::std::os::raw::c_int,
-//         height: *mut ::std::os::raw::c_int,
-//     ) -> *const ::std::os::raw::c_uchar;
-// }
-
-// extern "C" {
-//     pub fn fonsValidateTexture(
-//         s: *mut FONScontext,
-//         dirty: *mut ::std::os::raw::c_int,
-//     ) -> ::std::os::raw::c_int;
-// }
-
-// extern "C" {
-//     pub fn fonsDrawDebug(s: *mut FONScontext, x: f32, y: f32);
-// }
-
 /// Iterator of text used with `while` loop
 pub struct FonsTextIter {
     stash: FonsContext,
@@ -390,7 +424,7 @@ pub struct FonsTextIter {
 }
 
 impl FonsTextIter {
-    pub fn new(stash: &FonsContext, text: &str) -> Self {
+    pub fn new(stash: FonsContext, text: &str) -> Self {
         unsafe {
             let start = text.as_ptr() as *const _;
             let end = text.as_ptr().add(text.len()) as *const _;
