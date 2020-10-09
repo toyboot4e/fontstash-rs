@@ -130,18 +130,19 @@ impl FonsContext {
         self.fons.as_ref() as *const _ as *mut _
     }
 
-    pub fn create<R: Renderer>(w: u32, h: u32, renderer: *mut R) -> Self {
-        FonsContext {
-            fons: std::rc::Rc::new(FonsContextDrop::create(w, h, renderer)),
-        }
-    }
-
-    pub fn placeholder_null() -> Self {
+    /// The owner of `FonsContext` needs to have fixed memory location, so it's often stored in
+    /// [`Box`]. So first create the owner with uninitialized [`FonsContext`] and then initialize
+    /// it.
+    pub fn uninitialized() -> Self {
         Self {
             fons: std::rc::Rc::new(FonsContextDrop {
                 raw: std::ptr::null_mut(),
             }),
         }
+    }
+
+    pub fn init_mut<R: Renderer>(&mut self, w: u32, h: u32, renderer: *mut R) {
+        self.fons = std::rc::Rc::new(FonsContextDrop::create(w, h, renderer));
     }
 
     pub fn clone(&self) -> Self {
@@ -324,7 +325,7 @@ impl FonsContextDrop {
     }
 
     /// FIXME: this
-    pub fn is_dirty(&self) -> (bool, i32) {
+    pub fn dirty(&self) -> (bool, i32) {
         let mut dirty_flags = 0;
         let x = unsafe { sys::fonsValidateTexture(self.raw(), &mut dirty_flags) };
         (x == 1, dirty_flags)

@@ -13,7 +13,7 @@
 //!
 //! * TODO: Windows/Linux
 
-use std::{
+use ::std::{
     env,
     path::{Path, PathBuf},
     process::Command,
