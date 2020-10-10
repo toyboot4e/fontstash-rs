@@ -102,19 +102,6 @@ pub unsafe trait Renderer {
         rect: *mut std::os::raw::c_int,
         data: *const std::os::raw::c_uchar,
     ) -> std::os::raw::c_int;
-
-    /// Make a draw call
-    ///
-    /// This is a callback approach via [`draw_text`]. However, it's not recommended; you would
-    /// have to convert the array of structs (positions, texels and colors) into array of vertices
-    /// after all. So I recommend using [`FonsTextIter`].
-    unsafe extern "C" fn draw(
-        uptr: *mut std::os::raw::c_void,
-        verts: *const f32,
-        tcoords: *const f32,
-        colors: *const std::os::raw::c_uint,
-        nverts: std::os::raw::c_int,
-    );
 }
 
 /// Reference counted version of [`FonsContextDrop`]
@@ -188,7 +175,6 @@ impl FonsContextDrop {
             renderCreate: Some(R::create),
             renderResize: Some(R::resize),
             renderUpdate: Some(R::update),
-            renderDraw: Some(R::draw),
             renderDelete: Some(R::delete),
         };
 
