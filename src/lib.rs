@@ -25,6 +25,7 @@ pub type Result<T> = ::std::result::Result<T, FonsError>;
 #[derive(Debug, Clone)]
 pub enum FonsError {
     FailedToAllocFont(),
+    FoundNoFont(),
     /// `renderResize` returned `1`
     RenderResizeError(),
 }
@@ -59,22 +60,22 @@ pub type ErrorCallback = unsafe extern "C" fn(
 );
 
 pub fn set_error_callback(
-    cx: *mut sys::FONScontext,
+    raw_stash: *mut sys::FONScontext,
     callback: ErrorCallback,
     uptr: *mut ::std::os::raw::c_void,
 ) {
     unsafe {
-        sys::fonsSetErrorCallback(cx, Some(callback), uptr);
+        sys::fonsSetErrorCallback(raw_stash, Some(callback), uptr);
     }
 }
 
 /// Set of callbacks
 ///
-/// * `uptr`: user pointer that can be casted to the implementation of `Renderer`
+/// * `uptr`: user data pointer, which is usually the implementation of [`Renderer`
 pub unsafe trait Renderer {
-    /// Initialize resource and [`set_error_callback`] here
+    /// Creates font texture
     ///
-    /// Return `1` to represent success.
+    /// Return non-zero to represent success.
     unsafe extern "C" fn create(
         uptr: *mut std::os::raw::c_void,
         width: std::os::raw::c_int,
@@ -86,18 +87,21 @@ pub unsafe trait Renderer {
 
     /// Create new texture
     ///
-    /// Return `1` to represent success; it's actually boolean.
+    /// Return non-zero to represent success.
     unsafe extern "C" fn resize(
         uptr: *mut std::os::raw::c_void,
         width: std::os::raw::c_int,
         height: std::os::raw::c_int,
     ) -> std::os::raw::c_int;
 
+    /// Create new texture
+    ///
+    /// Return `1` to represent success; it's actually boolean.
     unsafe extern "C" fn update(
         uptr: *mut std::os::raw::c_void,
         rect: *mut std::os::raw::c_int,
         data: *const std::os::raw::c_uchar,
-    );
+    ) -> std::os::raw::c_int;
 
     /// Make a draw call
     ///
@@ -220,14 +224,6 @@ impl FonsContextDrop {
     }
 
     // extern "C" {
-    //     pub fn fonsAddFont(
-    //         s: *mut FONScontext,
-    //         name: *const ::std::os::raw::c_char,
-    //         path: *const ::std::os::raw::c_char,
-    //     ) -> ::std::os::raw::c_int;
-    // }
-
-    // extern "C" {
     //     pub fn fonsAddFallbackFont(
     //         stash: *mut FONScontext,
     //         base: ::std::os::raw::c_int,
@@ -285,6 +281,7 @@ impl FonsContextDrop {
 
 /// Font style state
 impl FonsContextDrop {
+    /// TODO: add DPI scaling factor to field
     pub fn set_size(&self, size: f32) {
         unsafe {
             sys::fonsSetSize(self.raw, size);
@@ -335,8 +332,8 @@ impl FonsContextDrop {
 /// Draw
 impl FonsContext {
     /// Iterator-based rendering
-    pub fn text_iter(&self, text: &str) -> FonsTextIter {
-        FonsTextIter::new(self.clone(), text)
+    pub fn text_iter(&self, text: &str) -> Result<FonsTextIter> {
+        FonsTextIter::from_text(self.clone(), text)
     }
 
     // Callback-based rendering
@@ -425,22 +422,29 @@ pub struct FonsTextIter {
 }
 
 impl FonsTextIter {
-    pub fn new(stash: FonsContext, text: &str) -> Self {
+    pub fn from_text(stash: FonsContext, text: &str) -> Result<Self> {
         unsafe {
+            // `FONStextIter` iterates through [start, end
             let start = text.as_ptr() as *const _;
             let end = text.as_ptr().add(text.len()) as *const _;
 
+            // the iterator is initialized with `stash->spacing`
             let mut iter: sys::FONStextIter = std::mem::zeroed();
             let res = sys::fonsTextIterInit(stash.raw, &mut iter as *mut _, 0.0, 0.0, start, end);
 
+            if res == 0 {
+                // failed
+                return Err(FonsError::FoundNoFont());
+            }
+
             let quad = std::mem::zeroed();
 
-            Self {
+            Ok(Self {
                 stash: stash.clone(),
                 iter,
                 quad,
                 is_running: res == 1,
-            }
+            })
         }
     }
 
@@ -458,8 +462,10 @@ impl FonsTextIter {
         };
 
         if res == 1 {
+            // continue
             Some(&self.quad)
         } else {
+            // end
             None
         }
     }

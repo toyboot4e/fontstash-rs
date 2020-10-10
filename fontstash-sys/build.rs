@@ -21,7 +21,7 @@ use ::std::{
 
 fn main() {
     self::prepare();
-    self::compile();
+    self::compile("fontstash.c");
     self::gen_bindings("fontstash_wrapper.h", "fontstash_bindings.rs");
 }
 
@@ -29,6 +29,7 @@ fn main() {
 fn prepare() {
     let root = PathBuf::from(env::var("CARGO_MANIFEST_DIR").unwrap());
 
+    // Note that it FORCES THE SUBMODULE TO CHECKOUT the commit `fontstash-sys` is dependent on
     Command::new("git")
         .current_dir(&root)
         .args(&["submodule", "update", "--init", "--recursive"])
@@ -37,13 +38,13 @@ fn prepare() {
 }
 
 /// Runs `cc` (only when it's necessary) and links the output libraries
-fn compile() {
+fn compile(src_path: impl AsRef<Path>) {
     let root = PathBuf::from(env::var("CARGO_MANIFEST_DIR").unwrap());
     let out_dir = PathBuf::from(env::var("OUT_DIR").unwrap());
 
     let out_lib_path = out_dir.join("libfontstash.a");
     if !out_lib_path.is_file() {
-        let file = root.join("fontstash.c");
+        let file = root.join(src_path);
         cc::Build::new()
             .file(file)
             .flag("-w") // suppress errors
