@@ -34,7 +34,6 @@ pub enum FonsError {
 #[derive(Debug, Clone, Copy)]
 #[repr(u8)]
 pub enum ErrorCode {
-    AtlasFull = sys::FONSerrorCode_FONS_ATLAS_FULL as u8,
     ScratchFull = sys::FONSerrorCode_FONS_SCRATCH_FULL as u8,
     StatesOverflow = sys::FONSerrorCode_FONS_STATES_OVERFLOW as u8,
     StatesUnderflow = sys::FONSerrorCode_FONS_STATES_UNDERFLOW as u8,
@@ -43,7 +42,6 @@ pub enum ErrorCode {
 impl ErrorCode {
     pub fn from_u32(x: u32) -> Option<Self> {
         Some(match x {
-            sys::FONSerrorCode_FONS_ATLAS_FULL => ErrorCode::AtlasFull,
             sys::FONSerrorCode_FONS_SCRATCH_FULL => ErrorCode::ScratchFull,
             sys::FONSerrorCode_FONS_STATES_OVERFLOW => ErrorCode::StatesOverflow,
             sys::FONSerrorCode_FONS_STATES_UNDERFLOW => ErrorCode::StatesUnderflow,
@@ -71,32 +69,31 @@ pub fn set_error_callback(
 
 /// Set of callbacks
 ///
-/// * `uptr`: user data pointer, which is usually the implementation of [`Renderer`
+/// * `uptr`: user data pointer, which is usually the implementation of [`Renderer`]
+///
+/// Return non-zero to represent success.
 pub unsafe trait Renderer {
     /// Creates font texture
-    ///
-    /// Return non-zero to represent success.
     unsafe extern "C" fn create(
         uptr: *mut std::os::raw::c_void,
         width: std::os::raw::c_int,
         height: std::os::raw::c_int,
     ) -> std::os::raw::c_int;
 
-    /// Free user texture data here
-    unsafe extern "C" fn delete(uptr: *mut std::os::raw::c_void);
-
     /// Create new texture
     ///
-    /// Return non-zero to represent success.
+    /// User of [`Renderer`] should not call it directly; it's used to implement
+    /// `FontStash::expand_atlas` and `FontStash::reset_atlas`.
     unsafe extern "C" fn resize(
         uptr: *mut std::os::raw::c_void,
         width: std::os::raw::c_int,
         height: std::os::raw::c_int,
     ) -> std::os::raw::c_int;
 
-    /// Create new texture
-    ///
-    /// Return `1` to represent success; it's actually boolean.
+    /// Try to resize texture while the atlas is full
+    unsafe extern "C" fn expand(uptr: *mut std::os::raw::c_void) -> std::os::raw::c_int;
+
+    /// Update texture
     unsafe extern "C" fn update(
         uptr: *mut std::os::raw::c_void,
         rect: *mut std::os::raw::c_int,
@@ -104,28 +101,38 @@ pub unsafe trait Renderer {
     ) -> std::os::raw::c_int;
 }
 
-/// Reference counted version of [`FonsContextDrop`]
-pub struct FonsContext {
+#[derive(Debug)]
+struct FonsContextDrop {
+    raw: *mut sys::FONScontext,
+}
+
+impl Drop for FonsContextDrop {
+    fn drop(&mut self) {
+        unsafe {
+            if !self.raw.is_null() {
+                sys::fonsDeleteInternal(self.raw);
+            }
+        }
+    }
+}
+
+/// Wrapped & reference counted version of [`FonsContextDrop`]
+///
+/// This is cheating borrow rules copying pointer
+#[derive(Debug)]
+pub struct FontStash {
     fons: std::rc::Rc<FonsContextDrop>,
 }
 
-impl std::ops::Deref for FonsContext {
-    type Target = FonsContextDrop;
-    fn deref(&self) -> &Self::Target {
-        self.fons.as_ref()
-    }
-}
-
-impl FonsContext {
+impl FontStash {
     pub fn raw(&self) -> *mut sys::FONScontext {
-        self.fons.as_ref() as *const _ as *mut _
+        self.fons.raw
     }
 
-    /// The owner of `FonsContext` needs to have fixed memory location, so it's often stored in
-    /// [`Box`]. So first create the owner with uninitialized [`FonsContext`] and then initialize
-    /// it.
+    /// [`Renderer`] is often stored in [`Box`] so that it has fixed memory position. First create
+    /// the owner with uninitialized [`FonsContext`] and then initialize it.
     pub fn uninitialized() -> Self {
-        Self {
+        FontStash {
             fons: std::rc::Rc::new(FonsContextDrop {
                 raw: std::ptr::null_mut(),
             }),
@@ -133,39 +140,19 @@ impl FonsContext {
     }
 
     pub fn init_mut<R: Renderer>(&mut self, w: u32, h: u32, renderer: *mut R) {
-        self.fons = std::rc::Rc::new(FonsContextDrop::create(w, h, renderer));
+        self.fons = std::rc::Rc::new(Self::create(w, h, renderer));
     }
 
     pub fn clone(&self) -> Self {
-        FonsContext {
+        FontStash {
             fons: self.fons.clone(),
         }
-    }
-}
-
-/// Wrapped version of [`sys::FONScontext`] with methods
-#[derive(Debug)]
-pub struct FonsContextDrop {
-    raw: *mut sys::FONScontext,
-}
-
-impl Drop for FonsContextDrop {
-    fn drop(&mut self) {
-        unsafe {
-            sys::fonsDeleteInternal(self.raw);
-        }
-    }
-}
-
-impl FonsContextDrop {
-    pub fn raw(&self) -> *mut sys::FONScontext {
-        self.raw
     }
 
     /// Creates `FONScontext`
     ///
     /// The `renderer` has to have consistant memory position. Maybe put in in a `Box`.
-    pub fn create<R: Renderer>(w: u32, h: u32, renderer: *mut R) -> Self {
+    fn create<R: Renderer>(w: u32, h: u32, renderer: *mut R) -> FonsContextDrop {
         let flags = Flags::TopLeft;
         let params = sys::FONSparams {
             width: w as std::os::raw::c_int,
@@ -174,8 +161,9 @@ impl FonsContextDrop {
             userPtr: renderer as *mut _,
             renderCreate: Some(R::create),
             renderResize: Some(R::resize),
+            renderExpand: Some(R::expand),
             renderUpdate: Some(R::update),
-            renderDelete: Some(R::delete),
+            renderDelete: None,
         };
 
         FonsContextDrop {
@@ -188,13 +176,13 @@ impl FonsContextDrop {
 pub struct FontIx(u32);
 
 /// Font storage
-impl FonsContextDrop {
+impl FontStash {
     pub fn add_font_mem(&self, name: &str, data: &[u8]) -> Result<FontIx> {
         let name = std::ffi::CString::new(name).unwrap();
 
         let ix = unsafe {
             sys::fonsAddFontMem(
-                self.raw,
+                self.raw(),
                 name.as_ptr() as *const _,
                 data as *const _ as *mut _,
                 data.len() as i32,
@@ -219,7 +207,7 @@ impl FonsContextDrop {
 
     pub fn set_font(&self, font: FontIx) {
         unsafe {
-            sys::fonsSetFont(self.raw, font.0 as i32);
+            sys::fonsSetFont(self.raw(), font.0 as i32);
         }
     }
 
@@ -235,7 +223,7 @@ impl FonsContextDrop {
 }
 
 /// Atlas
-impl FonsContextDrop {
+impl FontStash {
     pub fn atlas_size(&self) -> [u32; 2] {
         let [mut x, mut y] = [0, 0];
         unsafe {
@@ -244,7 +232,19 @@ impl FonsContextDrop {
         [x as u32, y as u32]
     }
 
-    /// Returns true if succeeded
+    /// Creates fontstash atlas size copying the previous data
+    pub fn expand_atlas(&self, w: u32, h: u32) -> Result<()> {
+        println!("EXPAND");
+        if unsafe { sys::fonsExpandAtlas(self.raw(), w as i32, h as i32) } != 0 {
+            println!("EXPAND_AFTER");
+            Ok(())
+        } else {
+            println!("EXPAND_AFTER");
+            Err(FonsError::RenderResizeError())
+        }
+    }
+
+    /// Creates new fontstash atlas with size without copying the previous data
     pub fn reset_atlas(&self, w: u32, h: u32) -> Result<()> {
         unsafe {
             if sys::fonsResetAtlas(self.raw(), w as i32, h as i32) == 1 {
@@ -254,29 +254,20 @@ impl FonsContextDrop {
             }
         }
     }
-
-    /// Returns true if succeed
-    pub fn expand_atlas(&self, w: u32, h: u32) -> Result<()> {
-        if unsafe { sys::fonsExpandAtlas(self.raw(), w as i32, h as i32) } == 1 {
-            Ok(())
-        } else {
-            Err(FonsError::RenderResizeError())
-        }
-    }
 }
 
 /// Font style state
-impl FonsContextDrop {
+impl FontStash {
     /// TODO: add DPI scaling factor to field
     pub fn set_size(&self, size: f32) {
         unsafe {
-            sys::fonsSetSize(self.raw, size);
+            sys::fonsSetSize(self.raw(), size);
         }
     }
 
     pub fn set_color(&self, color: u32) {
         unsafe {
-            sys::fonsSetColor(self.raw, color);
+            sys::fonsSetColor(self.raw(), color);
         }
     }
 
@@ -294,7 +285,7 @@ impl FonsContextDrop {
 }
 
 /// Texture
-impl FonsContextDrop {
+impl FontStash {
     /// Note that each pixel is in one byte (8 bits alpha channel only)
     pub fn with_pixels(&self, mut f: impl FnMut(&[u8], u32, u32)) {
         let (mut w, mut h) = (0, 0);
@@ -316,7 +307,7 @@ impl FonsContextDrop {
 }
 
 /// Draw
-impl FonsContext {
+impl FontStash {
     /// Iterator-based rendering
     pub fn text_iter(&self, text: &str) -> Result<FonsTextIter> {
         FonsTextIter::from_text(self.clone(), text)
@@ -324,7 +315,7 @@ impl FonsContext {
 }
 
 /// State stack
-impl FonsContext {
+impl FontStash {
     // extern "C" {
     //     pub fn fonsPushState(s: *mut FONScontext);
     // }
@@ -339,7 +330,7 @@ impl FonsContext {
 }
 
 /// Measure
-impl FonsContext {
+impl FontStash {
     // extern "C" {
     //     pub fn fonsTextBounds(
     //         s: *mut FONScontext,
@@ -386,14 +377,14 @@ pub enum Flags {
 
 /// Iterator of text used with `while` loop
 pub struct FonsTextIter {
-    stash: FonsContext,
+    stash: FontStash,
     iter: sys::FONStextIter,
     is_running: bool,
     quad: sys::FONSquad,
 }
 
 impl FonsTextIter {
-    pub fn from_text(stash: FonsContext, text: &str) -> Result<Self> {
+    pub fn from_text(stash: FontStash, text: &str) -> Result<Self> {
         unsafe {
             // `FONStextIter` iterates through [start, end
             let start = text.as_ptr() as *const _;
@@ -401,7 +392,7 @@ impl FonsTextIter {
 
             // the iterator is initialized with `stash->spacing`
             let mut iter: sys::FONStextIter = std::mem::zeroed();
-            let res = sys::fonsTextIterInit(stash.raw, &mut iter as *mut _, 0.0, 0.0, start, end);
+            let res = sys::fonsTextIterInit(stash.raw(), &mut iter as *mut _, 0.0, 0.0, start, end);
 
             if res == 0 {
                 // failed
@@ -426,7 +417,7 @@ impl FonsTextIter {
 
         let res = unsafe {
             sys::fonsTextIterNext(
-                self.stash.raw,
+                self.stash.raw(),
                 &mut self.iter as *mut _,
                 &mut self.quad as *mut _,
             )
