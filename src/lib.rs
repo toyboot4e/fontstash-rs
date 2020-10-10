@@ -335,21 +335,6 @@ impl FonsContext {
     pub fn text_iter(&self, text: &str) -> Result<FonsTextIter> {
         FonsTextIter::from_text(self.clone(), text)
     }
-
-    // Callback-based rendering
-    // extern "C" {
-    //     pub fn fonsDrawText(
-    //         s: *mut FONScontext,
-    //         x: f32,
-    //         y: f32,
-    //         string: *const ::std::os::raw::c_char,
-    //         end: *const ::std::os::raw::c_char,
-    //     ) -> f32;
-    // }
-
-    // extern "C" {
-    //     pub fn fonsDrawDebug(s: *mut FONScontext, x: f32, y: f32);
-    // }
 }
 
 /// State stack
