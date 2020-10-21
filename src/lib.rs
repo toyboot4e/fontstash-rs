@@ -4,21 +4,18 @@
 //!
 //! # Custom renderer
 //!
-//! `fontstash-rs` doesn't include the default renderer in the original repository. You have to
-//! write your own.
+//! `fontstash-rs` doesn't contain the default renderer in the original fontstash repository. You
+//! have to write your own.
 //!
 //! You pull [`FONSquad`](crate::sys::FONSquad]s via [`FonsTextIter`] and batch them to make draw
-//! calls.
-//!
-//! The callback-based renderer is excluded from this crate.
-//!
-//! # References
-//!
-//! * https://github.com/prime31/via/blob/master/fonts/fontbook.v
+//! calls. The callback-based drawing is excluded from this crate.
 
 #![allow(unused_variables)]
 
-pub use ::fontstash_sys as sys;
+pub use {
+    fontstash_sys as sys,
+    std::os::raw::{c_int, c_uchar, c_void},
+};
 
 pub type Result<T> = ::std::result::Result<T, FonsError>;
 
@@ -51,16 +48,12 @@ impl ErrorCode {
 }
 
 /// The [`error`] is actually [`ErrorCode`]
-pub type ErrorCallback = unsafe extern "C" fn(
-    uptr: *mut ::std::os::raw::c_void,
-    error: ::std::os::raw::c_int,
-    val: ::std::os::raw::c_int,
-);
+pub type ErrorCallback = unsafe extern "C" fn(uptr: *mut c_void, error: c_int, val: c_int);
 
 pub fn set_error_callback(
     raw_stash: *mut sys::FONScontext,
     callback: ErrorCallback,
-    uptr: *mut ::std::os::raw::c_void,
+    uptr: *mut c_void,
 ) {
     unsafe {
         sys::fonsSetErrorCallback(raw_stash, Some(callback), uptr);
@@ -74,31 +67,20 @@ pub fn set_error_callback(
 /// Return non-zero to represent success.
 pub unsafe trait Renderer {
     /// Creates font texture
-    unsafe extern "C" fn create(
-        uptr: *mut std::os::raw::c_void,
-        width: std::os::raw::c_int,
-        height: std::os::raw::c_int,
-    ) -> std::os::raw::c_int;
+    unsafe extern "C" fn create(uptr: *mut c_void, width: c_int, height: c_int) -> c_int;
 
     /// Create new texture
     ///
     /// User of [`Renderer`] should not call it directly; it's used to implement
     /// `FontStash::expand_atlas` and `FontStash::reset_atlas`.
-    unsafe extern "C" fn resize(
-        uptr: *mut std::os::raw::c_void,
-        width: std::os::raw::c_int,
-        height: std::os::raw::c_int,
-    ) -> std::os::raw::c_int;
+    unsafe extern "C" fn resize(uptr: *mut c_void, width: c_int, height: c_int) -> c_int;
 
-    /// Try to resize texture while the atlas is full
-    unsafe extern "C" fn expand(uptr: *mut std::os::raw::c_void) -> std::os::raw::c_int;
+    /// Try to expand texture while the atlas is full
+    unsafe extern "C" fn expand(uptr: *mut c_void) -> c_int;
 
     /// Update texture
-    unsafe extern "C" fn update(
-        uptr: *mut std::os::raw::c_void,
-        rect: *mut std::os::raw::c_int,
-        data: *const std::os::raw::c_uchar,
-    ) -> std::os::raw::c_int;
+    unsafe extern "C" fn update(uptr: *mut c_void, rect: *mut c_int, data: *const c_uchar)
+        -> c_int;
 }
 
 #[derive(Debug)]
@@ -116,7 +98,7 @@ impl Drop for FonsContextDrop {
     }
 }
 
-/// Wrapped & reference counted version of [`FonsContextDrop`]
+/// Font stash
 ///
 /// This is cheating borrow rules copying pointer
 #[derive(Debug)]
@@ -155,14 +137,15 @@ impl FontStash {
     fn create<R: Renderer>(w: u32, h: u32, renderer: *mut R) -> FonsContextDrop {
         let flags = Flags::TopLeft;
         let params = sys::FONSparams {
-            width: w as std::os::raw::c_int,
-            height: h as std::os::raw::c_int,
+            width: w as c_int,
+            height: h as c_int,
             flags: flags as u8,
             userPtr: renderer as *mut _,
             renderCreate: Some(R::create),
             renderResize: Some(R::resize),
             renderExpand: Some(R::expand),
             renderUpdate: Some(R::update),
+            // called before deleting font data but probablly we don't need it
             renderDelete: None,
         };
 
@@ -200,9 +183,9 @@ impl FontStash {
     // extern "C" {
     //     pub fn fonsAddFallbackFont(
     //         stash: *mut FONScontext,
-    //         base: ::std::os::raw::c_int,
-    //         fallback: ::std::os::raw::c_int,
-    //     ) -> ::std::os::raw::c_int;
+    //         base: ::::c_int,
+    //         fallback: ::::c_int,
+    //     ) -> ::::c_int;
     // }
 
     pub fn set_font(&self, font: FontIx) {
@@ -234,12 +217,9 @@ impl FontStash {
 
     /// Creates fontstash atlas size copying the previous data
     pub fn expand_atlas(&self, w: u32, h: u32) -> Result<()> {
-        println!("EXPAND");
         if unsafe { sys::fonsExpandAtlas(self.raw(), w as i32, h as i32) } != 0 {
-            println!("EXPAND_AFTER");
             Ok(())
         } else {
-            println!("EXPAND_AFTER");
             Err(FonsError::RenderResizeError())
         }
     }
@@ -280,7 +260,7 @@ impl FontStash {
     // }
 
     // extern "C" {
-    //     pub fn fonsSetAlign(s: *mut FONScontext, align: ::std::os::raw::c_int);
+    //     pub fn fonsSetAlign(s: *mut FONScontext, align: ::::c_int);
     // }
 }
 
@@ -298,12 +278,12 @@ impl FontStash {
         }
     }
 
-    /// FIXME: this
-    pub fn dirty(&self) -> (bool, i32) {
-        let mut dirty_flags = 0;
-        let x = unsafe { sys::fonsValidateTexture(self.raw(), &mut dirty_flags) };
-        (x == 1, dirty_flags)
-    }
+    // FIXME: this
+    // pub fn dirty(&self) -> (bool, i32) {
+    //     let mut dirty_flags = 0;
+    //     let x = unsafe { sys::fonsValidateTexture(self.raw(), &mut dirty_flags) };
+    //     (x == 1, dirty_flags)
+    // }
 }
 
 /// Draw
@@ -336,8 +316,8 @@ impl FontStash {
     //         s: *mut FONScontext,
     //         x: f32,
     //         y: f32,
-    //         string: *const ::std::os::raw::c_char,
-    //         end: *const ::std::os::raw::c_char,
+    //         string: *const ::::c_char,
+    //         end: *const ::::c_char,
     //         bounds: *mut f32,
     //     ) -> f32;
     // }
