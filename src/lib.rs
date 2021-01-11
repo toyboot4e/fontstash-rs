@@ -7,7 +7,7 @@
 //! `fontstash-rs` doesn't contain the default renderer in the original fontstash repository. You
 //! have to write your own.
 //!
-//! You pull [`FONSquad`](crate::sys::FONSquad]s via [`FonsTextIter`] and batch them to make draw
+//! You pull [`FONSquad`](crate::sys::FONSquad)s via [`FonsTextIter`] and batch them to make draw
 //! calls. The callback-based drawing is excluded from this crate.
 
 #![allow(unused_variables)]
@@ -47,7 +47,7 @@ impl ErrorCode {
     }
 }
 
-/// The [`error`] is actually [`ErrorCode`]
+/// The `error` argument is actually [`ErrorCode`]
 pub type ErrorCallback = unsafe extern "C" fn(uptr: *mut c_void, error: c_int, val: c_int);
 
 pub fn set_error_callback(
@@ -112,7 +112,7 @@ impl FontStash {
     }
 
     /// [`Renderer`] is often stored in [`Box`] so that it has fixed memory position. First create
-    /// the owner with uninitialized [`FonsContext`] and then initialize it.
+    /// the owner with uninitialized [`FontStash`] and then initialize it with [`Self::init_mut`].
     pub fn uninitialized() -> Self {
         FontStash {
             fons: std::rc::Rc::new(FonsContextDrop {
@@ -183,9 +183,9 @@ impl FontStash {
     // extern "C" {
     //     pub fn fonsAddFallbackFont(
     //         stash: *mut FONScontext,
-    //         base: ::::c_int,
-    //         fallback: ::::c_int,
-    //     ) -> ::::c_int;
+    //         base: c_int,
+    //         fallback: c_int,
+    //     ) -> c_int;
     // }
 
     pub fn set_font(&self, font: FontIx) {
@@ -260,7 +260,7 @@ impl FontStash {
     // }
 
     // extern "C" {
-    //     pub fn fonsSetAlign(s: *mut FONScontext, align: ::::c_int);
+    //     pub fn fonsSetAlign(s: *mut FONScontext, align: c_int);
     // }
 }
 
@@ -311,16 +311,17 @@ impl FontStash {
 
 /// Measure
 impl FontStash {
-    // extern "C" {
-    //     pub fn fonsTextBounds(
-    //         s: *mut FONScontext,
-    //         x: f32,
-    //         y: f32,
-    //         string: *const ::::c_char,
-    //         end: *const ::::c_char,
-    //         bounds: *mut f32,
-    //     ) -> f32;
-    // }
+    pub fn bounds(&self, pos: [f32; 2], text: &str) -> (f32, [f32; 4]) {
+        let mut bounds = [0.0; 4];
+
+        let advance = unsafe {
+            let start = text.as_ptr() as *const _;
+            let end = text.as_ptr().add(text.len()) as *const _;
+            sys::fonsTextBounds(self.raw(), pos[0], pos[1], start, end, bounds.as_mut_ptr())
+        };
+
+        (advance, bounds)
+    }
 
     // extern "C" {
     //     pub fn fonsLineBounds(s: *mut FONScontext, y: f32, miny: *mut f32, maxy: *mut f32);
