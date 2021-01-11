@@ -311,16 +311,18 @@ impl FontStash {
 
 /// Measure
 impl FontStash {
-    pub fn bounds(&self, pos: [f32; 2], text: &str) -> (f32, [f32; 4]) {
+    /// Returns `[left_x, top_y, right_x, bottom_y]`
+    pub fn bounds(&self, pos: [f32; 2], text: &str) -> [f32; 4] {
         let mut bounds = [0.0; 4];
 
-        let advance = unsafe {
+        // why does fontstash return width..
+        let _width = unsafe {
             let start = text.as_ptr() as *const _;
             let end = text.as_ptr().add(text.len()) as *const _;
             sys::fonsTextBounds(self.raw(), pos[0], pos[1], start, end, bounds.as_mut_ptr())
         };
 
-        (advance, bounds)
+        bounds
     }
 
     // extern "C" {
