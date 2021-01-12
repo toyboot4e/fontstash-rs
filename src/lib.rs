@@ -272,9 +272,9 @@ impl FontStash {
         }
     }
 
-    pub fn set_align(&self, align: i32) {
+    pub fn set_align(&self, align: Align) {
         unsafe {
-            sys::fonsSetAlign(self.raw(), align);
+            sys::fonsSetAlign(self.raw(), align.bits() as i32);
         }
     }
 }
@@ -354,16 +354,16 @@ impl FontStash {
     // }
 }
 
-#[derive(Debug, Clone, Copy)]
-#[repr(u8)]
-pub enum Align {
-    BaseLin = sys::FONSalign_FONS_ALIGN_BASELINE as u8,
-    Bottom = sys::FONSalign_FONS_ALIGN_BOTTOM as u8,
-    Center = sys::FONSalign_FONS_ALIGN_CENTER as u8,
-    Left = sys::FONSalign_FONS_ALIGN_LEFT as u8,
-    Mid = sys::FONSalign_FONS_ALIGN_MIDDLE as u8,
-    Right = sys::FONSalign_FONS_ALIGN_RIGHT as u8,
-    Top = sys::FONSalign_FONS_ALIGN_TOP as u8,
+bitflags::bitflags! {
+    pub struct Align: u32 {
+        const BASELINE = sys::FONSalign_FONS_ALIGN_BASELINE;
+        const BOTTOM = sys::FONSalign_FONS_ALIGN_BOTTOM;
+        const CENTER = sys::FONSalign_FONS_ALIGN_CENTER;
+        const LEFT = sys::FONSalign_FONS_ALIGN_LEFT;
+        const MID = sys::FONSalign_FONS_ALIGN_MIDDLE;
+        const RIGHT = sys::FONSalign_FONS_ALIGN_RIGHT;
+        const TOP = sys::FONSalign_FONS_ALIGN_TOP;
+    }
 }
 
 #[derive(Debug, Clone, Copy)]
