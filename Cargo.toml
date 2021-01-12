@@ -3,6 +3,12 @@ name = "fontstash"
 version = "0.1.2"
 authors = ["toyboot4e <toyboot4e@gmail.com>"]
 edition = "2018"
+exclude = []
+description = "wrapper of a forked version of fontstash"
+repository = "https://github.com/toyboot4e/fontstash-rs"
+license = "MIT"
+categories = ["game-development"]
+keywords = ["gamedev"]
 
 [lib]
 name = "fontstash"
