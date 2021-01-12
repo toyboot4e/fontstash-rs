@@ -14,4 +14,4 @@ keywords = ["gamedev"]
 name = "fontstash"
 
 [dependencies]
-fontstash-sys = { path = "./fontstash-sys" }
+fontstash-sys = { path = "./fontstash-sys", version = "0.1.0" }
