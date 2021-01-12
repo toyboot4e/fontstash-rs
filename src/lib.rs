@@ -1,14 +1,24 @@
-//! Wrapper of [fontstash]
-//!
-//! [fontstash]: https://github.com/memononen/fontstash
-//!
-//! # Custom renderer
-//!
-//! `fontstash-rs` doesn't contain the default renderer in the original fontstash repository. You
-//! have to write your own.
-//!
-//! You pull [`FONSquad`](crate::sys::FONSquad)s via [`FonsTextIter`] and batch them to make draw
-//! calls. The callback-based drawing is excluded from this crate.
+/*! Wrapper of [fontstash]
+
+[fontstash]: https://github.com/memononen/fontstash
+
+# Custom renderer
+
+`fontstash-rs` can be used with any graphics API, but it doesn't contain a default renderer.
+
+You can pull [`FONSquad`](crate::sys::FONSquad)s via [`FonsTextIter`] and batch them to make draw
+calls. The original fontstash had callback-based drawing, but it was excluded from this crate.
+
+# Multi line text
+
+Note that `fontstash-rs` doesn't handle multiple lines. You have to draw or measure text line by
+line by yourself.
+
+# TODOs
+
+* support state push/pop
+
+*/
 
 #![allow(unused_variables)]
 
