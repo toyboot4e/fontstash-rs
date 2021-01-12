@@ -22,10 +22,9 @@ line by yourself.
 
 #![allow(unused_variables)]
 
-pub use {
-    fontstash_sys as sys,
-    std::os::raw::{c_int, c_uchar, c_void},
-};
+use std::os::raw::{c_int, c_uchar, c_void};
+
+pub use fontstash_sys as sys;
 
 pub type Result<T> = ::std::result::Result<T, FonsError>;
 
@@ -168,7 +167,7 @@ impl FontStash {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct FontIx(u32);
 
-/// Font storage
+/// Font storage. Each font is keyed with `name` string.
 impl FontStash {
     pub fn add_font_mem(&self, name: &str, data: &[u8]) -> Result<FontIx> {
         let name = std::ffi::CString::new(name).unwrap();
@@ -248,7 +247,7 @@ impl FontStash {
 
 /// Font style state
 impl FontStash {
-    /// TODO: add DPI scaling factor to field
+    /// TODO: maybe add DPI scaling factor to the field
     pub fn set_size(&self, size: f32) {
         unsafe {
             sys::fonsSetSize(self.raw(), size);
@@ -261,17 +260,23 @@ impl FontStash {
         }
     }
 
-    // extern "C" {
-    //     pub fn fonsSetSpacing(s: *mut FONScontext, spacing: f32);
-    // }
+    pub fn set_spacing(&self, spacing: f32) {
+        unsafe {
+            sys::fonsSetSpacing(self.raw(), spacing);
+        }
+    }
 
-    // extern "C" {
-    //     pub fn fonsSetBlur(s: *mut FONScontext, blur: f32);
-    // }
+    pub fn set_blur(&self, blur: f32) {
+        unsafe {
+            sys::fonsSetBlur(self.raw(), blur);
+        }
+    }
 
-    // extern "C" {
-    //     pub fn fonsSetAlign(s: *mut FONScontext, align: c_int);
-    // }
+    pub fn set_align(&self, align: i32) {
+        unsafe {
+            sys::fonsSetAlign(self.raw(), align);
+        }
+    }
 }
 
 /// Texture
@@ -288,7 +293,7 @@ impl FontStash {
         }
     }
 
-    // FIXME: this
+    // FIXME: what's this
     // pub fn dirty(&self) -> (bool, i32) {
     //     let mut dirty_flags = 0;
     //     let x = unsafe { sys::fonsValidateTexture(self.raw(), &mut dirty_flags) };
@@ -368,7 +373,7 @@ pub enum Flags {
     TopLeft = sys::FONSflags_FONS_ZERO_TOPLEFT as u8,
 }
 
-/// Iterator of text used with `while` loop
+/// Iterator of text quads
 pub struct FonsTextIter {
     stash: FontStash,
     iter: sys::FONStextIter,
