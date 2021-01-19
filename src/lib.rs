@@ -378,7 +378,6 @@ pub struct FonsTextIter {
     stash: FontStash,
     iter: sys::FONStextIter,
     is_running: bool,
-    quad: sys::FONSquad,
 }
 
 impl FonsTextIter {
@@ -397,33 +396,36 @@ impl FonsTextIter {
                 return Err(FonsError::FoundNoFont());
             }
 
-            let quad = std::mem::zeroed();
-
             Ok(Self {
                 stash: stash.clone(),
                 iter,
-                quad,
                 is_running: res == 1,
             })
         }
     }
+}
 
-    pub fn next(&mut self) -> Option<&sys::FONSquad> {
+impl Iterator for FonsTextIter {
+    type Item = sys::FONSquad;
+
+    fn next(&mut self) -> Option<Self::Item> {
         if !self.is_running {
             return None;
         }
+
+        let mut quad = unsafe { std::mem::zeroed() };
 
         let res = unsafe {
             sys::fonsTextIterNext(
                 self.stash.raw(),
                 &mut self.iter as *mut _,
-                &mut self.quad as *mut _,
+                &mut quad as *mut _,
             )
         };
 
         if res == 1 {
             // continue
-            Some(&self.quad)
+            Some(quad)
         } else {
             // end
             None
