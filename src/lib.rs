@@ -1,13 +1,14 @@
-/*! Wrapper of [fontstash]
+/*! Wrapper of [fontstash] ([forked version] of it)
 
 [fontstash]: https://github.com/memononen/fontstash
+[forked version]: https://github.com/toyboot4e/fontstash-rs-src
 
 # Custom renderer
 
 `fontstash-rs` can be used with any graphics API, but it doesn't contain a default renderer.
 
 You can pull [`FONSquad`](crate::sys::FONSquad)s via [`FonsTextIter`] and batch them to make draw
-calls. The original fontstash had callback-based drawing, but it was excluded from this crate.
+calls. The original fontstash had callback-based drawing, but it was excluded from the fork.
 
 # Multi line text
 
@@ -36,7 +37,7 @@ pub enum FonsError {
     RenderResizeError(),
 }
 
-/// Error code supplied to [`ErrorCallBack`]
+/// Error code supplied to [`ErrorCallback`]
 #[derive(Debug, Clone, Copy)]
 #[repr(u8)]
 pub enum ErrorCode {
@@ -303,7 +304,15 @@ impl FontStash {
 
 /// Draw
 impl FontStash {
-    /// Iterator-based rendering
+    /// Iterator of quads
+    ///
+    /// Alignments of quadliterals can be changed with [`Fontstash::set_align`].
+    ///
+    /// NOTE: This is a streaming iterator, i.e., iterator of lifetimed objects. It's not possible
+    /// in current Rust until [GAT] is stabliezed. You have to use
+    /// `while let Some(quad) = fons.text_iter()`.
+    ///
+    /// [GAT]: https://github.com/rust-lang/rfcs/blob/master/text/1598-generic_associated_types.md
     pub fn text_iter(&self, text: &str) -> Result<FonsTextIter> {
         FonsTextIter::from_text(self.clone(), text)
     }
