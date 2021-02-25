@@ -62,6 +62,8 @@ impl fmt::Display for FonsError {
     }
 }
 
+impl std::error::Error for FonsError {}
+
 unsafe impl Send for FonsError {}
 
 unsafe impl Sync for FonsError {}
