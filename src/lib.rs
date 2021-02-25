@@ -1,39 +1,46 @@
-/*! Wrapper of [fontstash] ([forked version] of it)
+/*!
+Wrapper of [fontstash] (actually a [fork] of it)
 
 [fontstash]: https://github.com/memononen/fontstash
-[forked version]: https://github.com/toyboot4e/fontstash-rs-src
+[fork]: https://github.com/toyboot4e/fontstash-rs-src
 
 # Custom renderer
 
-`fontstash-rs` can be used with any graphics API, but it doesn't contain a default renderer.
+`fontstash` is render-agnonstic. You can pull [`FonsQuad`]s via [`FonsTextIter`] and batch them to
+make draw calls.
 
-You can pull [`FONSquad`](crate::sys::FONSquad)s via [`FonsTextIter`] and batch them to make draw
-calls. The original fontstash had callback-based drawing, but it was excluded from the fork.
+# Multiple lines of text
 
-# Multi line text
-
-Note that `fontstash-rs` doesn't handle multiple lines. You have to draw or measure text line by
-line by yourself.
+`fontstash-rs` doesn't handle multiple lines of text out of the box. You would need some layer to
+draw or measure them.
 
 # TODOs
 
 * support state push/pop
-
 */
 
 #![allow(unused_variables)]
-
-use std::os::raw::{c_int, c_uchar, c_void};
 
 pub use fontstash_sys as sys;
 
 pub type Result<T> = ::std::result::Result<T, FonsError>;
 
+/// Quadliteral
+///
+/// * `s0`, `t0`: left-up coner in the font texture
+/// * `s1`, `t1`: right-down coner in the font texture
+/// * `x0`, `y0`: left-up coner of the target position
+/// * `x1`, `y1`: right-down coner of the target position
+#[doc(inline)]
+pub type FonsQuad = sys::FONSquad;
+
+use std::os::raw::{c_int, c_uchar, c_void};
+
 #[derive(Debug, Clone)]
 pub enum FonsError {
     FailedToAllocFont(),
     FoundNoFont(),
-    /// `renderResize` returned `1`
+    // `renderResize` returned `1`
     RenderResizeError(),
 }
 
@@ -108,21 +115,22 @@ impl Drop for FonsContextDrop {
     }
 }
 
-/// Font stash
+/// Shared ownership of font stash
 ///
-/// This is cheating borrow rules copying pointer
+/// # Hack for creation
+///
+/// [`Renderer`] needs fixed memory position so that `fontstash::sys` can call callback methods
+/// of it.
+///
+/// 1. Create [`Renderer`] in a `Box` with `FontStash` being `uninitialized`
+/// 2. Call [`FontStash::init_mut`] to initialize `FontStash`
 #[derive(Debug)]
 pub struct FontStash {
     fons: std::rc::Rc<FonsContextDrop>,
 }
 
+/// Hack for creation
 impl FontStash {
-    pub fn raw(&self) -> *mut sys::FONScontext {
-        self.fons.raw
-    }
-
-    /// [`Renderer`] is often stored in [`Box`] so that it has fixed memory position. First create
-    /// the owner with uninitialized [`FontStash`] and then initialize it with [`Self::init_mut`].
     pub fn uninitialized() -> Self {
         FontStash {
             fons: std::rc::Rc::new(FonsContextDrop {
@@ -133,6 +141,12 @@ impl FontStash {
 
     pub fn init_mut<R: Renderer>(&mut self, w: u32, h: u32, renderer: *mut R) {
         self.fons = std::rc::Rc::new(Self::create(w, h, renderer));
+    }
+}
+
+impl FontStash {
+    pub fn raw(&self) -> *mut sys::FONScontext {
+        self.fons.raw
     }
 
     pub fn clone(&self) -> Self {
@@ -165,6 +179,7 @@ impl FontStash {
     }
 }
 
+/// Font index
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct FontIx(u32);
 
@@ -246,9 +261,9 @@ impl FontStash {
     }
 }
 
-/// Font style state
+/// States
 impl FontStash {
-    /// TODO: maybe add DPI scaling factor to the field
+    /// NOTE: DPI scaling?
     pub fn set_size(&self, size: f32) {
         unsafe {
             sys::fonsSetSize(self.raw(), size);
@@ -261,6 +276,7 @@ impl FontStash {
         }
     }
 
+    /// Horizontal space between characters?
     pub fn set_spacing(&self, spacing: f32) {
         unsafe {
             sys::fonsSetSpacing(self.raw(), spacing);
@@ -273,6 +289,7 @@ impl FontStash {
         }
     }
 
+    /// Sets alignment of quadliterals returned with [`FontStash::text_iter`]
     pub fn set_align(&self, align: Align) {
         unsafe {
             sys::fonsSetAlign(self.raw(), align.bits() as i32);
@@ -282,7 +299,7 @@ impl FontStash {
 
 /// Texture
 impl FontStash {
-    /// Note that each pixel is in one byte (8 bits alpha channel only)
+    /// NOTE: Pixel is in one byte (8 bits alpha channel only)
     pub fn with_pixels(&self, mut f: impl FnMut(&[u8], u32, u32)) {
         let (mut w, mut h) = (0, 0);
         let ptr = unsafe { sys::fonsGetTextureData(self.raw(), &mut w, &mut h) };
@@ -302,41 +319,40 @@ impl FontStash {
     // }
 }
 
+/// State stack
+impl FontStash {
+    pub fn push_state(&mut self) {
+        unsafe {
+            sys::fonsPushState(self.raw());
+        }
+    }
+
+    pub fn pop_state(&mut self) {
+        unsafe {
+            sys::fonsPopState(self.raw());
+        }
+    }
+
+    pub fn clear_state(&mut self) {
+        unsafe {
+            sys::fonsClearState(self.raw());
+        }
+    }
+}
+
 /// Draw
 impl FontStash {
-    /// Iterator of quads
-    ///
-    /// Alignments of quadliterals can be changed with [`Fontstash::set_align`].
-    ///
-    /// NOTE: This is a streaming iterator, i.e., iterator of lifetimed objects. It's not possible
-    /// in current Rust until [GAT] is stabliezed. You have to use
-    /// `while let Some(quad) = fons.text_iter()`.
-    ///
-    /// [GAT]: https://github.com/rust-lang/rfcs/blob/master/text/1598-generic_associated_types.md
+    /// Iterator of quadliterals aligned with [`Align`]
     pub fn text_iter(&self, text: &str) -> Result<FonsTextIter> {
         FonsTextIter::from_text(self.clone(), text)
     }
 }
 
-/// State stack
-impl FontStash {
-    // extern "C" {
-    //     pub fn fonsPushState(s: *mut FONScontext);
-    // }
-
-    // extern "C" {
-    //     pub fn fonsPopState(s: *mut FONScontext);
-    // }
-
-    // extern "C" {
-    //     pub fn fonsClearState(s: *mut FONScontext);
-    // }
-}
-
 /// Measure
 impl FontStash {
-    /// Returns `[left_x, top_y, right_x, bottom_y]`
-    pub fn bounds(&self, pos: [f32; 2], text: &str) -> [f32; 4] {
+    /// Returns `[left_x, top_y, right_x, bottom_y]`. Note that **it doesn't handle multiple lines
+    /// of text**. You need custom layer for multi-line text!
+    pub fn text_bounds(&self, pos: [f32; 2], text: &str) -> [f32; 4] {
         let mut bounds = [0.0; 4];
 
         // why does fontstash return width..
@@ -347,6 +363,23 @@ impl FontStash {
         };
 
         bounds
+    }
+
+    /// Returns `[width, height]`. Note that **it doesn't handle multiple lines of text**.
+    /// You need custom layer for multi-line text!
+    pub fn text_size(&self, text: &str) -> [f32; 2] {
+        let mut bounds = [0.0; 4];
+
+        // why does fontstash return width..
+        let _width = unsafe {
+            let start = text.as_ptr() as *const _;
+            let end = text.as_ptr().add(text.len()) as *const _;
+            sys::fonsTextBounds(self.raw(), 0.0, 0.0, start, end, bounds.as_mut_ptr())
+        };
+
+        let w = bounds[2] - bounds[0];
+        let h = bounds[3] - bounds[1];
+        [w, h]
     }
 
     // extern "C" {
@@ -364,6 +397,7 @@ impl FontStash {
 }
 
 bitflags::bitflags! {
+    /// Alignment of each quadliteral returned by [`FontStash::text_iter`]
     pub struct Align: u32 {
         const BASELINE = sys::FONSalign_FONS_ALIGN_BASELINE;
         const BOTTOM = sys::FONSalign_FONS_ALIGN_BOTTOM;
@@ -392,11 +426,10 @@ pub struct FonsTextIter {
 impl FonsTextIter {
     pub fn from_text(stash: FontStash, text: &str) -> Result<Self> {
         unsafe {
-            // `FONStextIter` iterates through [start, end
+            // `FONStextIter` iterates through [start, end)
             let start = text.as_ptr() as *const _;
             let end = text.as_ptr().add(text.len()) as *const _;
 
-            // the iterator is initialized with `stash->spacing`
             let mut iter: sys::FONStextIter = std::mem::zeroed();
             let res = sys::fonsTextIterInit(stash.raw(), &mut iter as *mut _, 0.0, 0.0, start, end);
 
@@ -415,7 +448,7 @@ impl FonsTextIter {
 }
 
 impl Iterator for FonsTextIter {
-    type Item = sys::FONSquad;
+    type Item = FonsQuad;
 
     fn next(&mut self) -> Option<Self::Item> {
         if !self.is_running {

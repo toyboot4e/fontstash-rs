@@ -1,17 +1,19 @@
-//! Build script of `fontstash-sys`
-//!
-//! If the compilation fails, run `cargo clean`.
-//!
-//! # What it does
-//!
-//! 1. Pulls `fontstash` if there's not
-//! 2. Compiles `fontstash` if it's not found in `OUT_DIR`
-//! 4. Links to the output libraries
-//! 5. Makes bindings (FFI) to the C libraries
-//!
-//! # TODOs
-//!
-//! * TODO: Windows/Linux
+/*!
+Build script of `fontstash-sys`
+
+If the compilation fails, run `cargo clean`.
+
+# What it does
+
+1. Pulls `fontstash` if there's not
+2. Compiles `fontstash` if it's not found in `OUT_DIR`
+4. Links to the output libraries
+5. Makes bindings (FFI) to the C libraries
+
+# TODOs
+
+* TODO: Windows/Linux
+*/
 
 use ::std::{
     env,
