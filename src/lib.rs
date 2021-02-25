@@ -23,7 +23,9 @@ draw or measure them.
 
 pub use fontstash_sys as sys;
 
-pub type Result<T> = ::std::result::Result<T, FonsError>;
+pub type Result<T> = std::result::Result<T, FonsError>;
+
+use std::fmt;
 
 /// Quadliteral
 ///
@@ -42,6 +44,22 @@ pub enum FonsError {
     FoundNoFont(),
     // `renderResize` returned `1`
     RenderResizeError(),
+}
+
+impl fmt::Display for FonsError {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        match self {
+            Self::FailedToAllocFont() => {
+                write!(f, "FontStash failed to allocate font")
+            }
+            Self::FoundNoFont() => {
+                write!(f, "FontStash was unable to find font")
+            }
+            Self::RenderResizeError() => {
+                write!(f, "FontStash detected `renderResize` returned `1`")
+            }
+        }
+    }
 }
 
 /// Error code supplied to [`ErrorCallback`]
