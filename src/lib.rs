@@ -352,7 +352,7 @@ impl FontStash {
 impl FontStash {
     /// Returns `[left_x, top_y, right_x, bottom_y]`. Note that **it doesn't handle multiple lines
     /// of text**. You need custom layer for multi-line text!
-    pub fn text_bounds(&self, pos: [f32; 2], text: &str) -> [f32; 4] {
+    pub fn text_bounds_oneline(&self, pos: [f32; 2], text: &str) -> [f32; 4] {
         let mut bounds = [0.0; 4];
 
         // why does fontstash return width..
@@ -367,7 +367,7 @@ impl FontStash {
 
     /// Returns `[width, height]`. Note that **it doesn't handle multiple lines of text**.
     /// You need custom layer for multi-line text!
-    pub fn text_size(&self, text: &str) -> [f32; 2] {
+    pub fn text_size_oneline(&self, text: &str) -> [f32; 2] {
         let mut bounds = [0.0; 4];
 
         // why does fontstash return width..
