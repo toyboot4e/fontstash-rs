@@ -62,6 +62,10 @@ impl fmt::Display for FonsError {
     }
 }
 
+unsafe impl Send for FonsError {}
+
+unsafe impl Sync for FonsError {}
+
 /// Error code supplied to [`ErrorCallback`]
 #[derive(Debug, Clone, Copy)]
 #[repr(u8)]
