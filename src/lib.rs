@@ -183,6 +183,16 @@ impl FontStash {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct FontIx(u32);
 
+impl FontIx {
+    pub fn raw(&self) -> u32 {
+        self.0
+    }
+
+    pub unsafe fn from_raw(ix: u32) -> Self {
+        Self(ix)
+    }
+}
+
 /// Font storage. Each font is keyed with `name` string.
 impl FontStash {
     pub fn add_font_mem(&self, name: &str, data: &[u8]) -> Result<FontIx> {
