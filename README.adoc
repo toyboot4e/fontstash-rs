@@ -1,3 +1,0 @@
-= fontstash-rs
-
-Wrapper of the https://github.com/toyboot4e/fontstash-rs-src[fork] of https://github.com/memononen/fontstash[fontstash]
