@@ -1,18 +1,22 @@
 /*!
-Wrapper of [fontstash] (actually a [fork] of it)
+Wrapper of [FontStash] (actually a [fork] of it)
 
-[fontstash]: https://github.com/memononen/fontstash
+[FontStash]: https://github.com/memononen/fontstash
 [fork]: https://github.com/toyboot4e/fontstash-rs-src
 
 # Custom renderer
 
-`fontstash` is render-agnonstic. You can pull [`FonsQuad`]s via [`FonsTextIter`] and batch them to
-make draw calls.
+Pull [`FonsQuad`]s via [`FonsTextIter`] and make draw calls.
 
-# Multiple lines of text
+NOTE: `fontstash-rs` doesn't handle multiple lines of text. You would need your own layer for
+measuring or drawing multiple lines of text.
 
-`fontstash-rs` doesn't handle multiple lines of text out of the box. You would need some layer to
-draw or measure them.
+# Alternatives
+
+* [fontdue](https://docs.rs/fontdue/latest/fontdue/) is similar to FontStash; they both align
+quadliterals and rasterize characters into pixels.
+* SDF might be preferable to rasterizing characters into pixels. You would get quadliterals with
+font shaping engine such as rustybuzz and then draw characters with SDF fonts.
 
 # TODOs
 
