@@ -386,6 +386,8 @@ impl FontStash {
     }
 }
 
+// FIXME: understand the difference between `advance` and `bounds` width
+
 /// Measure
 impl FontStash {
     /// Returns `[left_x, top_y, right_x, bottom_y]`. Note that **it doesn't handle multiple lines
@@ -393,8 +395,7 @@ impl FontStash {
     pub fn text_bounds_oneline(&self, pos: [f32; 2], text: &str) -> [f32; 4] {
         let mut bounds = [0.0; 4];
 
-        // why does fontstash return width..
-        let _width = unsafe {
+        let _advance = unsafe {
             let start = text.as_ptr() as *const _;
             let end = text.as_ptr().add(text.len()) as *const _;
             sys::fonsTextBounds(self.raw(), pos[0], pos[1], start, end, bounds.as_mut_ptr())
@@ -408,16 +409,17 @@ impl FontStash {
     pub fn text_size_oneline(&self, text: &str) -> [f32; 2] {
         let mut bounds = [0.0; 4];
 
-        // why does fontstash return width..
-        let _width = unsafe {
+        let advance = unsafe {
             let start = text.as_ptr() as *const _;
             let end = text.as_ptr().add(text.len()) as *const _;
             sys::fonsTextBounds(self.raw(), 0.0, 0.0, start, end, bounds.as_mut_ptr())
         };
 
-        let w = bounds[2] - bounds[0];
+        // let w = bounds[2] - bounds[0];
         let h = bounds[3] - bounds[1];
-        [w, h]
+
+        // [w, h]
+        [advance, h]
     }
 
     // extern "C" {
